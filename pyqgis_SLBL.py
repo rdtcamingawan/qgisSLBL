@@ -26,6 +26,9 @@ from qgis.core import (
 )
 from qgis import processing
 
+# Processing imports
+import numpy as np
+import deepcopy
 
 
 class ExampleProcessingAlgorithm(QgsProcessingAlgorithm):
@@ -46,6 +49,123 @@ class ExampleProcessingAlgorithm(QgsProcessingAlgorithm):
     # used when calling the algorithm from another algorithm, or when
     # calling from the QGIS console.
 
+    def SLBL(self,grid_dem,grid_mask,tol,maxt,maxv,z_min,planes=None):
+	# initilizes thickness and difference grids
+	s=grid_dem.shape
+	grid_thickn = np.zeros(s) # This just creates an array of zer0s with the shape equal to the grid_dem
+	grid_diff = np.ones(s) # This just creates an array of ones (1) with the shape equal to the grid_dem
+
+	# Creates a matrice to store the values of the neighbouring cells in the previous iteration
+	mat_neigh = np.zeros(s)
+	mat_neigh = np.expand_dims(mat_neigh,axis=2) # just changes the dimensionality of the array. no changes in the data, just the shape of the array. 
+
+	# NOTE: nb_neigh is initialized at the main script
+	# nb_neigh is 4, if the method selected uses "4 neighbors, average" or "4 neighbors, min/max" 
+	if nb_neigh ==4:
+		mat_neigh = np.tile(mat_neigh,(1,1,4)) # np.tile repeats plane x1, rows x1, columns x4. This creates a 4 copies of the 
+	else: 
+		mat_neigh = np.tile(mat_neigh,(1,1,8))
+
+	# Creates a matrice where the proposed value and previous value are stored for comparison
+	mat_comp = np.zeros(s)
+	mat_comp = np.expand_dims(mat_comp,axis=2)
+	mat_comp = np.tile(mat_comp,(1,1,2))
+
+	# Initiate the slbl grid (altitude)
+	grid_slbl = deepcopy(grid_dem) # RDTC: creates a copy and make sure nothing happens to the original
+
+	nb_iter = 0
+	volume = 0.
+
+	## RDTC:
+	# Tests if maxt (max thickness) is a finite number.
+	# If True, then the original DEM is substracted by the MAXT
+	if np.isfinite(maxt):
+		grid_maxt = grid_dem - maxt
+
+	# The SLBL strarts here
+	while np.amax(grid_diff)>stop and volume<maxv:
+		nb_iter=nb_iter+1
+		grid_thickn_prev = deepcopy(grid_thickn) # rdtc: just an array of 0's at the start
+		grid_slbl_prev = deepcopy(grid_slbl) # rdtc: the original DEM at the start
+		
+		# writes the values of the neighbourings cells in the 3rd dimension of the matrix
+		mat_neigh[:-1,:,0]=grid_slbl_prev[1:,:]
+		mat_neigh[1:,:,1]=grid_slbl_prev[:-1,:]
+		mat_neigh[:,:-1,2]=grid_slbl_prev[:,1:]
+		mat_neigh[:,1:,3]=grid_slbl_prev[:,:-1]
+		
+		# diagonals
+		# rdtc: only acessed when method is 8-neighbors
+		if nb_neigh ==8:
+			mat_neigh[:-1,:-1,4]=grid_slbl_prev[1:,1:]
+			mat_neigh[:-1,1:,5]=grid_slbl_prev[1:,:-1]
+			mat_neigh[1:,1:,6]=grid_slbl_prev[:-1,:-1]
+			mat_neigh[1:,:-1,7]=grid_slbl_prev[:-1,1:]
+		
+		# rdtc: default criteria is minmax, when method is 4-neighbors, minmax
+		# rdtc: 4N can also use average, as well as, 8N
+		if criteria == 'minmax':
+			mat_max=np.amax(mat_neigh,axis=2)
+			mat_min=np.amin(mat_neigh,axis=2)
+
+			# rdtc: mat_mean is the z_temp in Jaboyedoff's
+			mat_mean=(mat_max+mat_min)/2
+
+		elif criteria == 'average':
+			mat_mean=np.mean(mat_neigh,axis=2)
+
+		# rdtc: add tolerance for a more parabolic slip surface
+		mat_mean=mat_mean+tol
+
+		# limit to the lower altitude around the polygon
+		# rdtc: checks whether current mean is lower than the defined Z_min
+		# if yes, then Z_min would be used
+		if np.isfinite(z_min):
+			mat_mean=np.maximum(mat_mean,z_min)
+
+		# limit to the maximum thickness
+		# same logic as Z_min
+		if np.isfinite(maxt):
+			mat_mean=np.maximum(mat_mean,grid_maxt)
+		
+		# rdtc: only accessed when z_min and maxt are infiinte numbers
+		else not planes is None:
+			mat_mean=np.maximum(mat_mean,planes)
+		
+		# rdtc:Updates the values of mat_comp matrix
+		# plane 0: values of mat mean
+		# plane 1: values of grid_slbl
+		mat_comp[:,:,0]=mat_mean
+		mat_comp[:,:,1]=grid_slbl
+		
+		# Check if the new value should be kept
+		# rdtc: what is this inverse? 
+		if inverse == 'true':
+			grid_slbl=np.amax(mat_comp,axis=2)
+		else:
+			grid_slbl=np.amin(mat_comp,axis=2)
+		
+		# Replaces the values of the SLBL by the original values outside the masked area
+		grid_slbl[~grid_mask]=grid_dem[~grid_mask]
+		
+		# rdtc: This is the difference between the original dem - updated SLBL surface
+		grid_thickn = np.absolute(grid_dem - grid_slbl)
+
+		# rdtc: This is the difference between the previous and current iteration
+		# of the grid
+		grid_diff = np.absolute(grid_thickn - grid_thickn_prev)
+		
+		# rdtc: computation of volume
+		volume = (np.sum(grid_thickn)*cellSize*cellSize)
+		
+		if nb_iter%100==0:
+			str_message = '{} iterations. Max diff is {:.3e} m, max thickness is {:.3f} m and volume is {:.6f} million m3'.format(nb_iter,np.amax(grid_diff),np.amax(grid_thickn),volume/1000000)
+			QgsProcessingFeedback.pushInfo(str_message)
+	# The SLBL is finished
+	
+	return grid_slbl, grid_thickn, nb_iter
+
     DEM = "INPUT"
     MASKING = 'MASKING'
     TOL_MODE = 'TOLERANCE_MODE'
@@ -53,48 +173,6 @@ class ExampleProcessingAlgorithm(QgsProcessingAlgorithm):
     MAXV = 'MAXV'
     METHOD = 'METHOD'
     OUTPUT = "OUTPUT"
-
-    def name(self) -> str:
-        """
-        Returns the algorithm name, used for identifying the algorithm. This
-        string should be fixed for the algorithm, and must not be localised.
-        The name should be unique within each provider. Names should contain
-        lowercase alphanumeric characters only and no spaces or other
-        formatting characters.
-        """
-        return "myscript"
-
-    def displayName(self) -> str:
-        """
-        Returns the translated algorithm name, which should be used for any
-        user-visible display of the algorithm name.
-        """
-        return "My Script"
-
-    def group(self) -> str:
-        """
-        Returns the name of the group this algorithm belongs to. This string
-        should be localised.
-        """
-        return "Example scripts"
-
-    def groupId(self) -> str:
-        """
-        Returns the unique ID of the group this algorithm belongs to. This
-        string should be fixed for the algorithm, and must not be localised.
-        The group id should be unique within each provider. Group id should
-        contain lowercase alphanumeric characters only and no spaces or other
-        formatting characters.
-        """
-        return "examplescripts"
-
-    def shortHelpString(self) -> str:
-        """
-        Returns a localised short helper string for the algorithm. This string
-        should provide a basic description about what the algorithm does and the
-        parameters and outputs associated with it.
-        """
-        return "Example algorithm short description"
 
     def initAlgorithm(self, config: Optional[dict[str, Any]] = None):
         """
@@ -259,6 +337,48 @@ class ExampleProcessingAlgorithm(QgsProcessingAlgorithm):
         # dictionary, with keys matching the feature corresponding parameter
         # or output names.
         return {self.OUTPUT: dest_id}
+	
+    def name(self) -> str:
+        """
+        Returns the algorithm name, used for identifying the algorithm. This
+        string should be fixed for the algorithm, and must not be localised.
+        The name should be unique within each provider. Names should contain
+        lowercase alphanumeric characters only and no spaces or other
+        formatting characters.
+        """
+        return "myscript"
+
+    def displayName(self) -> str:
+        """
+        Returns the translated algorithm name, which should be used for any
+        user-visible display of the algorithm name.
+        """
+        return "My Script"
+
+    def group(self) -> str:
+        """
+        Returns the name of the group this algorithm belongs to. This string
+        should be localised.
+        """
+        return "Example scripts"
+
+    def groupId(self) -> str:
+        """
+        Returns the unique ID of the group this algorithm belongs to. This
+        string should be fixed for the algorithm, and must not be localised.
+        The group id should be unique within each provider. Group id should
+        contain lowercase alphanumeric characters only and no spaces or other
+        formatting characters.
+        """
+        return "examplescripts"
+
+    def shortHelpString(self) -> str:
+        """
+        Returns a localised short helper string for the algorithm. This string
+        should provide a basic description about what the algorithm does and the
+        parameters and outputs associated with it.
+        """
+        return "Example algorithm short description"
 
     def createInstance(self):
         return self.__class__()
