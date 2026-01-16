@@ -90,10 +90,10 @@ class ExampleProcessingAlgorithm(QgsProcessingAlgorithm):
 		grid_slbl_prev = deepcopy(grid_slbl) # rdtc: the original DEM at the start
 		
 		# writes the values of the neighbourings cells in the 3rd dimension of the matrix
-		mat_neigh[:-1,:,0]=grid_slbl_prev[1:,:]
-		mat_neigh[1:,:,1]=grid_slbl_prev[:-1,:]
-		mat_neigh[:,:-1,2]=grid_slbl_prev[:,1:]
-		mat_neigh[:,1:,3]=grid_slbl_prev[:,:-1]
+		mat_neigh[:-1,:,0]=grid_slbl_prev[1:,:] # South Neighbor
+		mat_neigh[1:,:,1]=grid_slbl_prev[:-1,:] # North Neighbor
+		mat_neigh[:,:-1,2]=grid_slbl_prev[:,1:] # East Neighbor
+		mat_neigh[:,1:,3]=grid_slbl_prev[:,:-1] # West Neighbor
 		
 		# diagonals
 		# rdtc: only acessed when method is 8-neighbors
