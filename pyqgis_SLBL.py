@@ -98,10 +98,10 @@ class ExampleProcessingAlgorithm(QgsProcessingAlgorithm):
 		# diagonals
 		# rdtc: only acessed when method is 8-neighbors
 		if nb_neigh ==8:
-			mat_neigh[:-1,:-1,4]=grid_slbl_prev[1:,1:]
-			mat_neigh[:-1,1:,5]=grid_slbl_prev[1:,:-1]
-			mat_neigh[1:,1:,6]=grid_slbl_prev[:-1,:-1]
-			mat_neigh[1:,:-1,7]=grid_slbl_prev[:-1,1:]
+			mat_neigh[:-1,:-1,4]=grid_slbl_prev[1:,1:] # South East Neighbor
+			mat_neigh[:-1,1:,5]=grid_slbl_prev[1:,:-1] # South West Neighbor
+			mat_neigh[1:,1:,6]=grid_slbl_prev[:-1,:-1] # North West Neighbor
+			mat_neigh[1:,:-1,7]=grid_slbl_prev[:-1,1:] # North East Neigbor
 		
 		# rdtc: default criteria is minmax, when method is 4-neighbors, minmax
 		# rdtc: 4N can also use average, as well as, 8N
