@@ -133,6 +133,12 @@ def SLBL(grid_dem,grid_mask,tol,maxt,maxv,z_min,planes=None):
 	return grid_slbl, grid_thickn, nb_iter
 
 def define_extent(poly_extent,dem_extent,cellSize,src_mask = False):
+	"""
+	RDTC:
+	qgisnative:clip
+	an equivalent processing algorithm
+
+	"""
 	# Define the processing area from the polygon(s) extent and the DEM
 	
 	if src_mask != False:
@@ -201,6 +207,25 @@ def define_extent(poly_extent,dem_extent,cellSize,src_mask = False):
 	return arcpy.Extent(xmin, ymin, xmax, ymax)
 
 def raster2numpy(ws,ext,mask_file,mask_desc,not_deepen,listValue):
+
+	"""
+	RDTC:
+	No need to convert this as GDAL provides a way
+	to read QgsRasterLayer as an ndarray
+	as written:
+
+	from osgeo import gdal
+	import numpy as np
+
+	proj = QgsProject.instance()
+	rlayer = proj.mapLayersByName('layer_name')[0]
+	raster_path = rlayer.source()
+	ds = gdal.Open(raster_path)
+	array = ds.GetRasterBand(1).ReadAsArray(0)
+	print(array.shape)
+
+	"""
+
 	# This function creates the numpy grids for processing
 	
 	# Generate a random name for intermediate data (to avoid conflict if previous intermediate data weren't correctly deleted)
