@@ -1,0 +1,9 @@
+[general]
+name=SLBL
+description=This plugin computes the volume of landslide by using SLBL algorithm
+version=1.0
+qgisMinimumVersion=3.0
+supportsQt6=True
+author=Richmond Camingawan
+email=camingawan.richmond@gmail.com
+icon=logo.png
