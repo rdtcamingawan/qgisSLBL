@@ -920,18 +920,27 @@ if __name__=="__main__":
 	grid_dem_file = arcpy.GetParameterAsText(0)
 	mask_file = arcpy.GetParameterAsText(1)
 	tol_mode = arcpy.GetParameterAsText(2) # single value, auto, auto min,inter,max
+
 	if tol_mode == 'Single value':
 		tols = [float(arcpy.GetParameterAsText(3).replace(',','.'))]
+
+	# rdtc: pertains to maximum thickness
 	maxt = arcpy.GetParameterAsText(4)
 	if len(maxt)==0:
 		maxt = np.inf
 	else:
 		maxt = float(maxt.replace(',','.'))
 	maxv = arcpy.GetParameterAsText(5)
+
+	# rdtc: pertains to maximum volume
 	if len(maxv)==0:
 		maxv = np.inf
 	else:
 		maxv = float(maxv.replace(',','.'))
+	
+	# rdtc: gets the method and criteria 
+	# methods: 4 or 8 neighbors
+	# criteria: average or min/max
 	stop = float(arcpy.GetParameterAsText(6).replace(',','.'))
 	method = arcpy.GetParameterAsText(7)
 	if method == '4 neighbours, average' or method == '4 neighbours, min/max':
@@ -944,9 +953,13 @@ if __name__=="__main__":
 		criteria = 'minmax'
 	elif method == '4 neighbours, average' or method == '8 neighbours, average':
 		criteria = 'average'
-	not_deepen = arcpy.GetParameterAsText(8)
-	inverse = arcpy.GetParameterAsText(9)
+
+	# rdtc: idk what these do
+	not_deepen = arcpy.GetParameterAsText(8) # my guess is that this stops the excavation of the terrain (?)
+	inverse = arcpy.GetParameterAsText(9) 
 	
+	# rdtc: single / multiple areas of analysis
+	# then user needs to provide an output filename
 	if os.path.isdir(arcpy.GetParameterAsText(10)): #gdb return false...
 		# Multiple areas
 		merge_poly = False
@@ -977,6 +990,7 @@ if __name__=="__main__":
 	figspath = r'D:\Soft\pySLBL\Unit_tests'
 	
 	# Check the necessary extensions
+	# rdtc: arcpy things? i guess
 	if arcpy.CheckOutExtension("Spatial")!="CheckedOut":
 		arcpy.AddMessage("A Spatial analyst license is needed to run this tool")
 
@@ -997,11 +1011,13 @@ if __name__=="__main__":
 	
 	arcpy.env.workspace = ws
 
+	# rdtc: arcpy read the dem_path to an arcpy raster object
 	grid_dem_file = arcpy.Raster(grid_dem_file)
 	#grid_dem_lyr = os.path.basename(grid_dem_file)
 	#arcpy.MakeRasterLayer_management (grid_dem_file, grid_dem_lyr, "", "", "1")
 
 	# Convert the polygon features to a raster mask
+	# rdtc: just do a qgis clip here
 	try:
 		arcpy.RecalculateFeatureClassExtent_management(mask_file)
 	except:
@@ -1009,8 +1025,12 @@ if __name__=="__main__":
 	mask_desc = arcpy.Describe(mask_file)
 	try:
 		# Retrieve the selected polygons (works if the input is a layer)
+		# rdtc: just set the input layer as a QgsParameterFeature 
+		# so user is able to just analyze a selected feature/s within a layer
 		Set = mask_desc.FIDSet
 	except:
+		# rdtc: i can skip this, since this would be done
+		# primarily within QGIS environment
 		#makes a layer first if the input is a file
 		if arcpy.GetInstallInfo()['ProductName'] == 'Desktop':
 			mask_file = arcpy.mapping.Layer(mask_file)
@@ -1024,36 +1044,53 @@ if __name__=="__main__":
 		Set = Set.split(';')
 		Set = [int(x) for x in Set]
 
+	# rdtc: i can ignore this since i can force
+	# user to only input vector layer (polygon)
 	if mask_desc.shapeType != "Polygon":
 		arcpy.AddError('The mask layer must be a polygon layer')
+	# rdtc: this is when polygon layer is inputted
 	else:
-		# Retrive key parameters from the DEM that will be used for the raster mask
+		# Retrieve key parameters from the DEM that will be used for the raster mask
 		# Desc is done on the referenced raster since the extent is otherwise 
 		# returned in the SRC of the dataframe
 		grid_dem_path = grid_dem_file.catalogPath
 		dem_desc = arcpy.Describe(grid_dem_path)
 		arcpy.env.outputCoordinateSystem = dem_desc.spatialReference
-		cellSize = dem_desc.meanCellWidth
+		
+		# rdtc: found this in StackOverflow outputs the pixel size
+		# of a given raster layer
+		# ras  = QgsRasterLayer("C:/Users/myname/raster.tif")
+		# pixelSizeX= ras.rasterUnitsPerPixelX()
+		# pixelSizeY = ras.rasterUnitsPerPixelY()
+		cellSize = dem_desc.meanCellWidth # rdtc: could use the code above as an alternative
+
 		# With mosaic datasets, the returned cellSize might be 0. --> Try to get
 		# the cellsize from the first raster of the mosaic dataset
+
+		# rdtc: i dont think i would be dealing with mosaic dataset
+		# so this could be ignored too
 		if cellSize == 0:
 			try:
 				dem_desc_temp = arcpy.Describe(os.path.join(grid_dem_path,"raster.objectid=1"))
 				cellSize = dem_desc_temp.meanCellWidth
 			except:
 				arcpy.AddError("Can't get the cell size of the DEM...")
+		
 		dem_extent = dem_desc.extent
 		
 		# Check if the mask and DEM are in the same SRC. Reproject the mask if necessary
+		# rdtc: use gdal/pyqgis to reproject
+		# both the raster and vector layer 
+		# to the same CRS. Or just reproject the vector instead to the raster's CRS
 		src_mask = mask_desc.extent.spatialReference.name
 		src_dem = dem_desc.extent.spatialReference.name
 		if verbose:
 			arcpy.AddMessage('SRC mask: {}, SRC dem: {}, src are equal: {}'.format(src_mask,src_dem,src_mask == src_dem))
 		if src_mask != src_dem:
 			# Generate a random name for intermediate data (to avoid conflict if previous intermediate data weren't correctly deleted)
-			lower_alphabet = string.ascii_lowercase
-			random_string =''.join(random.choice(lower_alphabet) for i in range(5))
-			name_temp = 'mask_temp_' + random_string
+			lower_alphabet = string.ascii_lowercase # rdtc: i can skip this
+			random_string =''.join(random.choice(lower_alphabet) for i in range(5)) # this one too
+			name_temp = 'mask_temp_' + random_string 
 			if saveInGDB:
 				mask_file_temp = os.path.join(ws,name_temp)
 			else:
@@ -1072,6 +1109,7 @@ if __name__=="__main__":
 		
 		oid_fieldname = mask_desc.OIDFieldName
 
+		# remember merge_poly is True if its only a Single Area
 		if merge_poly == True:
 			# Get the name and extension of the output
 			if out_basename.find('.') != -1:
@@ -1099,21 +1137,43 @@ if __name__=="__main__":
 				ymin = min([extent.YMin for extent in extents])
 				ymax = max([extent.YMax for extent in extents])
 				poly_extent = arcpy.Extent(xmin, ymin, xmax, ymax)
+
+				# rdtc: the first function
+				# just use the qgis: mask here
 				processing_extent = define_extent(poly_extent,dem_extent,cellSize,src_mask = extents[0].spatialReference)
 				arcpy.env.extent = processing_extent
+
+				# rdtc: i have made a specific function just for this
+				# the z_min lives in this function too?
+				# need to check this out
+				# checked it out. z_min just returns the minimum of the input dem. or np.nan if not_deepen is False
 				grid_mask, grid_dem, z_min = raster2numpy(ws,ext,mask_file,mask_desc,not_deepen,listValue)
+
+				# rdtc: i still need to convert this function (limniting_planes)
+				# plane_constraint is True when a point_file is not 0. Line 977
 				if plane_constraint:
 					grid_planes = limiting_planes(point_file,grid_dem,processing_extent,cellSize)
+				
+				# rdtc: definetolerance outputs (tole_inter, tol_min, tol_max)
 				if tol_mode == 'Auto' or tol_mode == 'Auto min/inter/max':
 					tols = definetolerance(grid_mask, grid_dem)
+
+				# rdtc: so when auto is selected, tols becomes tol_inter
 				if tol_mode == 'Auto':
 					tols = [tols[0]]
 				tol_nr = 0
+
+				# rdtc: loops over the tols
+				# single loop only when tol_mode is Auto
 				for tol in tols:
 					if plane_constraint:
 						grid_slbl, grid_thickn, nb_iter = SLBL(grid_dem,grid_mask,tol,maxt,maxv,z_min,planes=grid_planes)
+					
+					# ordtc: only differernce is the plane_constraint
 					else:
 						grid_slbl, grid_thickn, nb_iter = SLBL(grid_dem,grid_mask,tol,maxt,maxv,z_min)
+					
+					# rdtc: idk what these conditionals do
 					if tol_mode == 'Auto min/inter/max':
 						if tol_nr == 0:
 							out_basename_validated = validatename(ws,out_basename + '_inter',ext)
@@ -1123,10 +1183,14 @@ if __name__=="__main__":
 							out_basename_validated = validatename(ws,out_basename + '_max',ext)
 					else:
 						out_basename_validated = validatename(ws,out_basename,ext)
+					
+					# rdtc: just a bunch of database filling out functions
 					fillsummarytable(summaryTable,out_basename,out_basename_validated,grid_thickn,grid_mask,nb_iter,tol)
 					if grid_mnt_out== 'true' or grid_hill_out == 'true' or grid_diff_out == 'true':
 						savegrids(grid_slbl,grid_thickn,ws,out_basename_validated,ext)
 					tol_nr += 1
+		
+			# rdtc: this is just a copy / simplified version of the above code
 			else:
 				#no selected polygons --> takes all
 				for row in rows:
@@ -1162,6 +1226,9 @@ if __name__=="__main__":
 					if grid_mnt_out== 'true' or grid_hill_out == 'true' or grid_diff_out == 'true':
 						savegrids(grid_slbl,grid_thickn,ws,out_basename_validated,ext)
 					tol_nr += 1
+		
+		# rdtc: for multiple areas
+		# same logic as the single area
 		else:
 			if saveInGDB:
 				ext=''
