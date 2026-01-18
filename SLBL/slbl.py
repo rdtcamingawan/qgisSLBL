@@ -73,3 +73,6 @@ def SLBL(dem_array, tol=0.0, maxt=0.0, threshold=0.001, nmax_iter=100, cell_size
     volume = np.nansum(np.subtract(x, prev_dem)) * cell_size * cell_size
 
     return volume
+
+if __name__ == '__main__'
+    volume = SLBL()
